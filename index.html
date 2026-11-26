@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Identity & Access</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<style type="text/tailwindcss">
+@layer components{
+.btn{@apply inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50}
+.btn-p{@apply border-teal-700 bg-teal-700 text-white hover:bg-teal-800}
+.btn-d{@apply text-rose-600 hover:bg-rose-50}
+.inp{@apply w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100}
+.th{@apply px-4 py-2.5 text-left text-xs font-medium text-slate-500}
+.td{@apply px-4 py-3 text-sm text-slate-700 align-top}
+.chip{@apply inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-700}
+.lbl{@apply mb-1 block text-xs font-medium text-slate-500}
+.card{@apply rounded-xl border border-slate-200 bg-white}}
+body{font-family:Inter,ui-sans-serif,system-ui,sans-serif}
+</style></head>
+<body class="bg-slate-50 text-slate-800 antialiased">
+<div class="flex h-screen">
+<aside class="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
+<div class="flex h-14 items-center gap-2 border-b border-slate-100 px-5 font-semibold"><span class="grid h-7 w-7 place-items-center rounded-lg bg-teal-700 text-sm text-white">E</span>ElectreeFi CMS</div>
+<nav id="nav" class="flex-1 space-y-0.5 p-3 text-sm"></nav>
+<div class="border-t p-3 text-xs text-slate-400">Demo data built around real use cases. Resets on reload.</div>
+</aside>
+<main class="flex min-w-0 flex-1 flex-col">
+<header class="flex h-14 items-center justify-between border-b bg-white px-6"><div id="crumb" class="text-sm text-slate-500"></div><span class="chip">Tenant: Mahindra EV</span></header>
+<section id="page" class="flex-1 overflow-y-auto p-6"></section>
+</main></div>
+<div id="ov" class="fixed inset-0 z-20 hidden bg-slate-900/30" data-a="close"></div>
+<div id="dr" class="fixed right-0 top-0 z-30 flex h-full w-full max-w-2xl translate-x-full flex-col bg-white shadow-2xl transition-transform"></div>
+<div id="toast" class="fixed bottom-5 left-1/2 z-50 hidden -translate-x-1/2 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white"></div>
+<script>
+const $=s=>document.querySelector(s),U=a=>[...new Set(a)],cp=o=>JSON.parse(JSON.stringify(o));let sq=100;const nid=()=>++sq;
+const PR={state:'State',city:'City',mf:'Manufacturer'},LV=['No access','View','Edit','Manage'];
+const MODS=[['st','Stations and chargers'],['op','Charger operations (commands, OCPP console)'],['tk','Support tickets'],['jb','Survey and commissioning jobs'],['bl','Billing and tariffs (sensitive)'],['id','Identity and access']];
+const CH=['CH-01,Uttarakhand,Dehradun,Tirex','CH-02,Uttarakhand,Haridwar,Delta','CH-03,Uttarakhand,Dehradun,Delta','CH-04,Uttar Pradesh,Lucknow,Tirex','CH-05,Uttar Pradesh,Noida,Taco','CH-06,Delhi,Delhi,Delta','CH-07,Maharashtra,Mumbai,Tirex','CH-08,Maharashtra,Pune,Taco','CH-09,West Bengal,Kolkata,Tirex','CH-10,Maharashtra,Pune,Tirex'].map(s=>{const[id,state,city,mf]=s.split(',');return{id,state,city,mf}});
+const mk=L=>L.map(([id,t,state,city,ch,a,c])=>({id,t,state,city,ch,mf:CH.find(x=>x.id==ch)?.mf,a,c}));
+// ticket: id, title, state, city, charger (or null for home charger), assigned to, created by
+const TK=mk([['T-1','Charger offline','Uttarakhand','Dehradun','CH-01',2,3],['T-2','Payment failed','Uttarakhand','Haridwar','CH-02',3,3],['T-3','Home charger not starting','Uttarakhand','Dehradun',null,2,2],['T-4','Connector damaged','Uttar Pradesh','Lucknow','CH-04',4,3],['T-5','Session stuck','Uttar Pradesh','Noida','CH-05',3,4],['T-6','RFID not reading','Delhi','Delhi','CH-06',5,3],['T-7','Home charger tripping','Delhi','Delhi',null,3,5],['T-8','Low uptime alert','Maharashtra','Mumbai','CH-07',3,1],['T-9','Charger offline','Maharashtra','Pune','CH-08',1,1],['T-10','Billing dispute','West Bengal','Kolkata','CH-09',3,3]]);
+const JB=mk([['J-1','Site survey','Uttarakhand','Haridwar',null,8,1],['J-2','Commissioning','Uttar Pradesh','Noida','CH-05',8,1],['J-3','Site survey','Delhi','Delhi',null,1,1],['J-4','Commissioning','Maharashtra','Pune','CH-10',1,1]]);
+const ar=(p,ty,...v)=>({p,ty,v});
+let roles=[
+{id:1,name:'Tenant Admin',sys:1,lv:{st:3,op:3,tk:3,jb:3,bl:3,id:3}},
+{id:2,name:'Support Executive',sys:1,lv:{st:1,tk:2}},
+{id:3,name:'Support Lead',sys:1,lv:{st:1,tk:3}},
+{id:4,name:'Operations Manager',sys:1,lv:{st:2,op:2,tk:1}},
+{id:5,name:'Read-only Viewer',sys:1,lv:{st:1,tk:1,jb:1}},
+{id:6,name:'Partner Viewer',sys:1,lv:{st:1}},
+{id:7,name:'Field Engineer',sys:1,lv:{st:1,jb:2}},
+{id:8,name:'Finance',sys:1,lv:{st:1,bl:3}}];
+let rules=[
+{id:1,name:'Uttarakhand · Only mine',rec:'mine',area:[ar('state','inc','Uttarakhand')]},
+{id:2,name:"Uttarakhand · Everyone's",rec:'all',area:[ar('state','inc','Uttarakhand')]},
+{id:3,name:'Uttar Pradesh · Only mine',rec:'mine',area:[ar('state','inc','Uttar Pradesh')]},
+{id:4,name:'Delhi · Only mine',rec:'mine',area:[ar('state','inc','Delhi')]},
+{id:5,name:'Tirex chargers in Maharashtra',rec:'all',area:[ar('mf','inc','Tirex'),ar('state','inc','Maharashtra')]},
+{id:6,name:'Only my assigned work',rec:'mine',area:[]},
+{id:7,name:"All areas · Everyone's",rec:'all',area:[]},
+{id:8,name:"Maharashtra · Everyone's",rec:'all',area:[ar('state','inc','Maharashtra')]},
+{id:9,name:"Uttarakhand except Dehradun · Everyone's",rec:'all',area:[ar('state','inc','Uttarakhand'),ar('city','exc','Dehradun')]}];
+let groups=[{id:1,name:'UK/UP Support Executive',rules:[1,3]}];
+const as=(role,rules=[],groups=[])=>({role,rules,groups});
+let users=[
+{id:1,name:'Anita Rao',type:'Internal',note:'Tenant admin. Everything, everywhere.',asg:[as(1,[7])]},
+{id:2,name:'Asha Negi',type:'Client',note:'Uttarakhand Support Executive. Only tickets assigned to or created by her, in Uttarakhand.',asg:[as(2,[1])]},
+{id:3,name:'Ravi Bisht',type:'Client',note:'Support Lead, Uttarakhand. Every ticket in Uttarakhand.',asg:[as(3,[2])]},
+{id:4,name:'Neha Singh',type:'Client',note:'Works Uttarakhand and UP through one group. Only her own tickets in both states.',asg:[as(2,[],[1])]},
+{id:5,name:'Karan Mehta',type:'Client',note:"Everyone's tickets in Uttarakhand, only his own in Delhi (two rules, combined).",asg:[as(2,[2,4])]},
+{id:6,name:'Priya Nair',type:'Partner',note:'Tirex OEM team. Sees only Tirex chargers in Maharashtra, nothing else.',asg:[as(6,[5])]},
+{id:7,name:'Rahul Verma',type:'Client',note:'Operates chargers in Maharashtra, view-only everywhere else (two assignments).',asg:[as(4,[8]),as(5,[7])]},
+{id:8,name:'Vikas Kumar',type:'Field',note:'Field engineer. Sees only jobs assigned to or created by him. No chargers.',asg:[as(7,[6])]},
+{id:9,name:'Sana Khan',type:'Client',note:'Finance. Billing management, view-only stations.',asg:[as(8,[7])]}];
+/* ---------- logic ---------- */
+const role=i=>roles.find(r=>r.id==i),rule=i=>rules.find(r=>r.id==i),grp=i=>groups.find(g=>g.id==i);
+const aOK=(r,x)=>r.area.every(c=>c.ty=='inc'?c.v.includes(x[c.p]):!c.v.includes(x[c.p]));
+const hit=(r,x,k,u)=>k=='ch'?(r.area.some(c=>c.ty=='inc')&&aOK(r,x)):aOK(r,x)&&(r.rec=='all'||x.a==u||x.c==u);
+const aRules=a=>U([...a.rules,...a.groups.flatMap(g=>grp(g).rules)]).map(rule);
+const lvl=(u,m,k,x)=>Math.max(0,...u.asg.filter(a=>aRules(a).some(r=>hit(r,x,k,u.id))).map(a=>role(a.role).lv[m]||0));
+const areaTx=r=>r.area.map(c=>`${PR[c.p]} ${c.ty=='inc'?'is':'is not'} ${c.v.join(' or ')||'?'}`).join(' and ')||'any area';
+const sent=r=>`Tickets and jobs: ${r.rec=='mine'?'only those assigned to or created by the user':"everyone's"}. Area: ${areaTx(r)}. ${r.area.some(c=>c.ty=='inc')?'Chargers: all in that area.':'No chargers, because no area is chosen.'}`;
+const uRule=id=>users.filter(u=>u.asg.some(a=>aRules(a).some(r=>r.id==id))).length,uGrp=id=>users.filter(u=>u.asg.some(a=>a.groups.includes(id))).length;
+const seen=u=>[CH.filter(x=>lvl(u,'st','ch',x)).length,TK.filter(x=>lvl(u,'tk','tk',x)).length,JB.filter(x=>lvl(u,'jb','jb',x)).length];
+const badge=(t,c)=>`<span class="rounded-full bg-${c}-100 px-2 py-0.5 text-xs font-medium text-${c}-700">${t}</span>`;
+/* ---------- pages ---------- */
+const page=(t,s,b,body)=>`<div class="mb-5 flex items-end justify-between gap-4"><div><h1 class="text-xl font-semibold">${t}</h1><p class="max-w-2xl text-sm text-slate-500">${s}</p></div>${b}</div>${body}`;
+const tbl=(h,rows)=>`<div class="card overflow-hidden"><table class="w-full"><thead class="border-b bg-slate-50/60"><tr>${h.map(x=>`<th class="th">${x}</th>`).join('')}</tr></thead><tbody class="divide-y divide-slate-100">${rows}</tbody></table></div>`;
+const row=(a,id,cells)=>`<tr class="cursor-pointer hover:bg-slate-50" data-a="${a}" data-id="${id}">${cells.map((c,i)=>`<td class="td ${i?'':'font-medium text-slate-900'}">${c}</td>`).join('')}</tr>`;
+const V={};
+V.roles=()=>page('Roles','What a person can do. Pick a level per module. Each level includes the one before it.','<button class="btn btn-p" data-a="newRole">New role</button>',tbl(['Role','Type','Access'],roles.map(r=>row('editRole',r.id,[r.name,r.sys?badge('System','slate'):badge('Custom','teal'),MODS.filter(m=>r.lv[m[0]]).map(m=>`<span class="chip">${m[1].split(' (')[0]}: ${LV[r.lv[m[0]]]}</span>`).join(' ')])).join('')));
+V.rules=()=>page('Access rules','Where a person works and whose records they see. One rule = an area plus Only mine or Everyone\'s. Groups and users reuse rules.','<button class="btn btn-p" data-a="newRule">New access rule</button>',tbl(['Rule','What it gives','Used by'],rules.map(r=>row('editRule',r.id,[r.name,`<span class="text-xs font-normal text-slate-600">${sent(r)}</span>`,`${uRule(r.id)} users, ${groups.filter(g=>g.rules.includes(r.id)).length} groups`])).join('')));
+V.groups=()=>page('Access groups','A bundle of access rules for people who work across several areas. Groups hold rules only, never other groups.','<button class="btn btn-p" data-a="newGroup">New access group</button>',tbl(['Group','Rules inside','Used by'],groups.map(g=>row('editGroup',g.id,[g.name,g.rules.map(i=>`<span class="chip">${rule(i).name}</span>`).join(' '),`${uGrp(g.id)} users`])).join('')));
+V.users=()=>page('Users','Everything assigned to a user is combined. Each assignment is a role plus the rules or groups that say where it applies.','<button class="btn btn-p" data-a="newUser">New user</button>',tbl(['User','Use case','Assignments','Sees now'],users.map(u=>{const[c,t,j]=seen(u);return row('editUser',u.id,[`${u.name}<div class="text-xs font-normal text-slate-500">${u.type}</div>`,`<span class="text-xs font-normal">${u.note}</span>`,u.asg.map(a=>`<div class="text-xs font-normal"><b>${role(a.role).name}</b>: ${[...a.rules.map(i=>rule(i).name),...a.groups.map(i=>'Group '+grp(i).name)].join(', ')||'<i>no access rules</i>'}</div>`).join(''),`<span class="text-xs font-normal">${c} chargers, ${t} tickets, ${j} jobs</span>`])}).join('')));
+const NAV=[['roles','Roles'],['rules','Access rules'],['groups','Access groups'],['users','Users']];let view='users';
+function render(){view=(location.hash||'#users').slice(1);if(!V[view])view='users';
+$('#nav').innerHTML='<div class="px-3 pb-1 text-xs font-medium text-slate-400">Identity & Access</div>'+NAV.map(([k,l])=>`<a href="#${k}" class="block rounded-lg px-3 py-2 ${view==k?'bg-teal-50 font-medium text-teal-800':'text-slate-600 hover:bg-slate-50'}">${l}</a>`).join('');
+$('#crumb').innerHTML=`Identity & Access / <span class="text-slate-800">${NAV.find(n=>n[0]==view)[1]}</span>`;$('#page').innerHTML=V[view]()}
+/* ---------- drawer ---------- */
+let ed=null,kind='',tab='d';const ED={};
+const shell=(t,s,body,foot)=>`<div class="flex items-center justify-between border-b px-6 py-4"><div><div class="font-semibold">${t}</div><div class="text-xs text-slate-500">${s}</div></div><button class="btn" data-a="close">Close</button></div><div id="db" class="flex-1 space-y-5 overflow-y-auto p-6">${body}</div><div class="flex items-center justify-between border-t bg-slate-50 px-6 py-3">${foot}</div>`;
+function paint(){const sc=$('#db')?.scrollTop||0;$('#dr').innerHTML=ED[kind]();$('#dr').classList.remove('translate-x-full');$('#ov').classList.remove('hidden');if($('#db'))$('#db').scrollTop=sc}
+const open=(k,o,t='d')=>{kind=k;ed=o;tab=t;paint()};
+const close=()=>{$('#dr').classList.add('translate-x-full');$('#ov').classList.add('hidden');ed=null};
+const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.remove('hidden');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.add('hidden'),2500)};
+const done=m=>{close();render();toast(m)};
+const nm=(v,ph)=>`<div><label class="lbl">Name</label><input class="inp" data-f="name" value="${v}" placeholder="${ph}"></div>`;
+ED.role=()=>{const r=ed,ro=r.sys;return shell(r.id?r.name:'New role',ro?'System role, read-only':'Custom role',
+`${ro?'<div class="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">System roles can\'t be edited. Use "Start from this role" to make your own copy.</div>':''}${nm(r.name,'e.g. Regional Support Lead').replace('class="inp"',`class="inp" ${ro?'disabled':''}`)}
+<div class="card divide-y divide-slate-100">${MODS.map(([k,l])=>`<div class="flex items-center justify-between gap-3 p-3"><span class="text-sm font-medium">${l}</span><div class="flex shrink-0 rounded-lg bg-slate-100 p-0.5 text-xs">${LV.map((x,i)=>`<button ${ro?'disabled':`data-a="lv" data-m="${k}" data-i="${i}"`} class="rounded-md px-2.5 py-1 ${(r.lv[k]||0)==i?'bg-white font-medium text-teal-800 shadow-sm':'text-slate-500'}">${x}</button>`).join('')}</div></div>`).join('')}</div>
+<p class="text-xs text-slate-500">Manage includes Edit, Edit includes View. Where a person can do this comes from the access rules, not the role.</p>`,
+`<div>${r.id&&!ro?'<button class="btn btn-d" data-a="delRole">Delete</button>':''}</div><div class="flex gap-2">${r.id?'<button class="btn" data-a="cloneRole">Start from this role</button>':''}${ro?'':'<button class="btn btn-p" data-a="saveRole">Save role</button>'}</div>`)};
+const vals=p=>U(CH.map(c=>c[p])).sort();
+const condRow=(c,i)=>`<div class="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2"><select class="inp !w-auto" data-c="ctype" data-i="${i}"><option value="inc" ${c.ty=='inc'?'selected':''}>Include</option><option value="exc" ${c.ty=='exc'?'selected':''}>Exclude</option></select><select class="inp !w-auto" data-c="cprop" data-i="${i}">${Object.entries(PR).map(([k,l])=>`<option value="${k}" ${c.p==k?'selected':''}>${l}</option>`).join('')}</select><span class="text-xs text-slate-400">is</span>${c.v.map(v=>`<span class="chip">${v}<button data-a="rmVal" data-i="${i}" data-v="${v}" aria-label="Remove ${v}">×</button></span>`).join('')}<select class="inp !w-auto" data-c="caddv" data-i="${i}"><option value="">Add value</option>${vals(c.p).filter(v=>!c.v.includes(v)).map(v=>`<option>${v}</option>`).join('')}</select><button class="ml-auto text-sm text-slate-400 hover:text-rose-600" data-a="rmCond" data-i="${i}">Remove</button></div>`;
+const recCard=(v,t,d)=>`<button data-a="rec" data-v="${v}" class="flex-1 rounded-xl border p-3 text-left ${ed.rec==v?'border-teal-600 bg-teal-50':'border-slate-200 hover:bg-slate-50'}"><div class="text-sm font-medium">${t}</div><div class="text-xs text-slate-500">${d}</div></button>`;
+ED.rule=()=>{const r=ed,n=r.id?uRule(r.id):0,m=CH.filter(x=>hit(r,x,'ch')),tk=TK.filter(x=>aOK(r,x)).length;return shell(r.id?r.name:'New access rule','Area plus whose records',
+`${nm(r.name,'e.g. Bihar · Everyone\'s')}
+<div><div class="mb-2 flex items-center justify-between"><span class="text-sm font-medium">1. Which area?</span><button class="btn" data-a="addCond">Add condition</button></div><div class="space-y-2">${r.area.map(condRow).join('')||'<div class="card p-3 text-sm text-slate-400">No area chosen. Tickets and jobs are not limited by area, and no chargers match.</div>'}</div><p class="mt-1 text-xs text-slate-500">Every condition must match. Exclude removes things inside this rule only.</p></div>
+<div><div class="mb-2 text-sm font-medium">2. Whose tickets and jobs?</div><div class="flex gap-2">${recCard('mine','Only mine','Assigned to the user or created by the user')}${recCard('all',"Everyone's",'All tickets and jobs in the area')}</div><p class="mt-1 text-xs text-slate-500">Chargers and stations are decided by the area alone.</p></div>
+<div class="card space-y-1 bg-slate-50 p-4"><div class="text-xs font-medium text-slate-500">What this rule gives</div><div class="text-sm">${sent(r)}</div><div class="text-sm"><b class="text-teal-700">${m.length}</b> chargers match${r.rec=='all'?`, and <b class="text-teal-700">${tk}</b> of ${TK.length} tickets are in the area`:''}.</div>${n?`<div class="text-xs text-amber-700">Used by ${n} users. Saving changes what they see.</div>`:''}</div>`,
+`<div>${r.id?'<button class="btn btn-d" data-a="delRule">Delete</button>':''}</div><button class="btn btn-p" data-a="saveRule">Save rule</button>`)};
+ED.group=()=>{const g=ed;return shell(g.id?g.name:'New access group','A bundle of access rules',
+`${nm(g.name,'e.g. Delhi NCR Support')}<div><div class="mb-2 text-sm font-medium">Rules in this group</div><div class="card divide-y divide-slate-100">${rules.map(r=>`<label class="flex cursor-pointer items-start gap-3 p-3"><input type="checkbox" class="mt-1 accent-teal-700" data-c="grule" data-id="${r.id}" ${g.rules.includes(r.id)?'checked':''}><span><span class="text-sm font-medium">${r.name}</span><span class="block text-xs text-slate-500">${sent(r)}</span></span></label>`).join('')}</div></div>${g.id&&uGrp(g.id)?`<p class="text-xs text-amber-700">Used by ${uGrp(g.id)} users. Saving changes what they see.</p>`:''}`,
+`<div>${g.id?'<button class="btn btn-d" data-a="delGroup">Delete</button>':''}</div><button class="btn btn-p" data-a="saveGroup">Save group</button>`)};
+const tag=l=>l?`<span class="chip !bg-teal-50 !text-teal-800">${LV[l]}</span>`:'<span class="text-xs text-slate-300">Hidden</span>';
+const eff=u=>{const T=(t,h,rows)=>`<div><div class="mb-2 text-sm font-medium">${t}</div>${tbl(h,rows)}</div>`,w=(x,c)=>`<td class="td">${x.city}, ${x.state}</td><td class="td">${c}</td>`;
+return `<p class="text-sm text-slate-600">Live result of the roles and rules above. Change an assignment and this updates.</p>`+T('Chargers',['Charger','Area','Stations','Operations'],CH.map(x=>`<tr><td class="td">${x.id} ${x.mf}</td><td class="td">${x.city}, ${x.state}</td><td class="td">${tag(lvl(u,'st','ch',x))}</td><td class="td">${tag(lvl(u,'op','ch',x))}</td></tr>`).join(''))+T('Tickets',['Ticket','Area','Access'],TK.map(x=>`<tr><td class="td">${x.id} ${x.t}</td>${w(x,tag(lvl(u,'tk','tk',x)))}</tr>`).join(''))+T('Jobs',['Job','Area','Access'],JB.map(x=>`<tr><td class="td">${x.id} ${x.t}</td>${w(x,tag(lvl(u,'jb','jb',x)))}</tr>`).join(''))};
+const accOpts=a=>`<option value="">Add rule or group</option><optgroup label="Access rules">${rules.filter(r=>!a.rules.includes(r.id)).map(r=>`<option value="r:${r.id}">${r.name}</option>`).join('')}</optgroup><optgroup label="Access groups">${groups.filter(g=>!a.groups.includes(g.id)).map(g=>`<option value="g:${g.id}">${g.name}</option>`).join('')}</optgroup>`;
+ED.user=()=>{const u=ed;return shell(u.id?u.name:'New user',u.id?u.type+' user':'An invite email goes out when you save',
+(u.id?`<div class="flex gap-1 rounded-lg bg-slate-100 p-1 text-sm">${[['d','Roles and access'],['e','What this user sees']].map(([k,l])=>`<button data-a="tab" data-k="${k}" class="flex-1 rounded-md py-1.5 ${tab==k?'bg-white font-medium shadow-sm':'text-slate-500'}">${l}</button>`).join('')}</div>`:'')+(tab=='e'&&u.id?eff(u):
+`${u.note?`<div class="rounded-lg bg-teal-50 p-3 text-sm text-teal-900">${u.note}</div>`:''}<div class="grid grid-cols-2 gap-3"><div><label class="lbl">Full name</label><input class="inp" data-f="name" value="${u.name}"></div><div><label class="lbl">User type</label><select class="inp" data-f="type">${['Internal','Client','Field','Partner'].map(t=>`<option ${u.type==t?'selected':''}>${t}</option>`).join('')}</select></div></div>
+<div><div class="mb-2 flex items-center justify-between"><span class="text-sm font-medium">Assignments: a role, and where it applies</span><button class="btn" data-a="addAsg">Add assignment</button></div><div class="space-y-2">${u.asg.map((a,i)=>`<div class="card space-y-2 p-3"><div class="flex gap-2"><select class="inp" data-c="arole" data-i="${i}">${roles.map(r=>`<option value="${r.id}" ${a.role==r.id?'selected':''}>${r.name}</option>`).join('')}</select><button class="text-sm text-slate-400 hover:text-rose-600" data-a="rmAsg" data-i="${i}">Remove</button></div><div class="flex flex-wrap items-center gap-2">${a.rules.map(r=>`<span class="chip" title="${sent(rule(r))}">Rule: ${rule(r).name}<button data-a="rmAcc" data-i="${i}" data-t="r" data-v="${r}" aria-label="Remove">×</button></span>`).join('')}${a.groups.map(g=>`<span class="chip !bg-teal-50 !text-teal-800" title="${grp(g).rules.map(r=>rule(r).name).join(', ')}">Group: ${grp(g).name} (${grp(g).rules.length} rules)<button data-a="rmAcc" data-i="${i}" data-t="g" data-v="${g}" aria-label="Remove">×</button></span>`).join('')}<select class="inp !w-auto" data-c="aadd" data-i="${i}">${accOpts(a)}</select></div>${a.rules.length+a.groups.length?'':'<div class="text-xs text-amber-700">No rule or group yet, so this role gives no access to anything.</div>'}</div>`).join('')||'<div class="card p-4 text-sm text-slate-400">No assignments yet.</div>'}</div><p class="mt-1 text-xs text-slate-500">Rules and groups on one assignment are combined: the user gets everything any of them gives.</p></div>`),
+`<div></div><button class="btn btn-p" data-a="saveUser">${u.id?'Save user':'Save and send invite'}</button>`)};
+/* ---------- actions ---------- */
+const A={close},C={};
+A.newRole=()=>open('role',{name:'',sys:0,lv:{}});A.editRole=d=>open('role',cp(role(d.id)));
+A.cloneRole=()=>open('role',{name:ed.name+' (copy)',sys:0,lv:{...ed.lv}});
+A.lv=d=>{ed.lv[d.m]=+d.i;paint()};
+A.saveRole=()=>{if(!ed.name.trim())return toast('Give the role a name');ed.id?Object.assign(role(ed.id),ed):roles.push({...ed,id:nid()});done('Role saved')};
+A.delRole=()=>{if(users.some(u=>u.asg.some(a=>a.role==ed.id)))return toast('Role is assigned to users. Reassign them first.');roles=roles.filter(r=>r.id!=ed.id);done('Role deleted')};
+A.newRule=()=>open('rule',{name:'',rec:'mine',area:[]});A.editRule=d=>open('rule',cp(rule(d.id)));
+A.addCond=()=>{ed.area.push(ar('state','inc'));paint()};A.rmCond=d=>{ed.area.splice(d.i,1);paint()};
+A.rmVal=d=>{const c=ed.area[d.i];c.v=c.v.filter(x=>x!=d.v);paint()};A.rec=d=>{ed.rec=d.v;paint()};
+C.ctype=(d,e)=>{ed.area[d.i].ty=e.value;paint()};C.cprop=(d,e)=>{Object.assign(ed.area[d.i],{p:e.value,v:[]});paint()};
+C.caddv=(d,e)=>{if(e.value){ed.area[d.i].v.push(e.value);paint()}};
+A.saveRule=()=>{if(!ed.name.trim())return toast('Give the rule a name');if(ed.area.some(c=>!c.v.length))return toast('Every condition needs a value');ed.id?Object.assign(rule(ed.id),ed):rules.push({...ed,id:nid()});done('Rule saved')};
+A.delRule=()=>{if(uRule(ed.id)||groups.some(g=>g.rules.includes(ed.id)))return toast('This rule is in use. Remove it from users and groups first.');rules=rules.filter(r=>r.id!=ed.id);done('Rule deleted')};
+A.newGroup=()=>open('group',{name:'',rules:[]});A.editGroup=d=>open('group',cp(grp(d.id)));
+C.grule=(d,e)=>{const i=+d.id;ed.rules=e.checked?[...ed.rules,i]:ed.rules.filter(x=>x!=i);paint()};
+A.saveGroup=()=>{if(!ed.name.trim())return toast('Give the group a name');ed.id?Object.assign(grp(ed.id),ed):groups.push({...ed,id:nid()});done('Group saved')};
+A.delGroup=()=>{if(uGrp(ed.id))return toast('This group is in use. Remove it from users first.');groups=groups.filter(g=>g.id!=ed.id);done('Group deleted')};
+A.newUser=()=>open('user',{name:'',type:'Client',asg:[as(5)]});A.editUser=d=>open('user',cp(users.find(u=>u.id==d.id)));
+A.tab=d=>{tab=d.k;paint()};A.addAsg=()=>{ed.asg.push(as(5));paint()};A.rmAsg=d=>{ed.asg.splice(d.i,1);paint()};
+A.rmAcc=d=>{const a=ed.asg[d.i],k=d.t=='r'?'rules':'groups';a[k]=a[k].filter(x=>x!=d.v);paint()};
+C.arole=(d,e)=>{ed.asg[d.i].role=+e.value;paint()};
+C.aadd=(d,e)=>{if(!e.value)return;const[t,id]=e.value.split(':');ed.asg[d.i][t=='r'?'rules':'groups'].push(+id);paint()};
+A.saveUser=()=>{if(!ed.name.trim())return toast('Name is required');const n=!ed.id;ed.id?Object.assign(users.find(u=>u.id==ed.id),ed):users.push({...ed,id:nid()});done(n?'Invite sent (demo)':'User saved')};
+document.addEventListener('click',e=>{const t=e.target.closest('[data-a]');if(t)A[t.dataset.a]?.(t.dataset)});
+document.addEventListener('change',e=>{const t=e.target;if(t.dataset.c)C[t.dataset.c]?.(t.dataset,t);else if(t.dataset.f&&ed)ed[t.dataset.f]=t.value});
+document.addEventListener('input',e=>{const t=e.target;if(t.dataset.f&&ed)ed[t.dataset.f]=t.value});
+document.addEventListener('keydown',e=>{if(e.key=='Escape')close()});
+addEventListener('hashchange',()=>{close();render()});render();
+</script></body></html>
